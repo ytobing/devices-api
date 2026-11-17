@@ -1,0 +1,288 @@
+openapi: 3.0.3
+info:
+  title: Devices API
+  version: 0.1.0
+  description: |
+    Manage devices: create, fetch, filter by brand or state, partially update, and delete.
+
+    Errors always use the `Error` schema with a machine-readable `code`
+    and a human-readable `message`.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Devices
+
+paths:
+  /devices:
+    get:
+      tags: [Devices]
+      operationId: listDevices
+      summary: Fetch devices
+      description: Returns all devices. Filters are optional and combined with AND.
+      parameters:
+        - name: brand
+          in: query
+          required: false
+          description: Only return devices of this brand (exact match).
+          schema:
+            type: string
+            example: Apple
+        - name: state
+          in: query
+          required: false
+          description: Only return devices in this state.
+          schema:
+            $ref: '#/components/schemas/DeviceState'
+      responses:
+        '200':
+          description: List of devices (empty array when nothing matches).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Device'
+              example:
+                - id: 6f1c2a9e-3b4d-4e8f-9a1b-2c3d4e5f6a7b
+                  name: iPhone 15
+                  brand: Apple
+                  state: AVAILABLE
+                  created_at: '2026-11-17T09:30:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [Devices]
+      operationId: createDevice
+      summary: Create device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDeviceRequest'
+            example:
+              name: iPhone 15
+              brand: Apple
+      responses:
+        '201':
+          description: Device created.
+          headers:
+            Location:
+              description: URL of the created device.
+              schema:
+                type: string
+                example: /devices/6f1c2a9e-3b4d-4e8f-9a1b-2c3d4e5f6a7b
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              example:
+                id: 6f1c2a9e-3b4d-4e8f-9a1b-2c3d4e5f6a7b
+                name: iPhone 15
+                brand: Apple
+                state: AVAILABLE
+                created_at: '2026-11-17T09:30:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /devices/{id}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceID'
+
+    get:
+      tags: [Devices]
+      operationId: getDevice
+      summary: Fetch device
+      responses:
+        '200':
+          description: The device.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              example:
+                id: 6f1c2a9e-3b4d-4e8f-9a1b-2c3d4e5f6a7b
+                name: iPhone 15
+                brand: Apple
+                state: AVAILABLE
+                created_at: '2026-11-17T09:30:00Z'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      tags: [Devices]
+      operationId: updateDevice
+      summary: Update device data
+      description: |
+        Partial update. Only the fields present in the body are changed;
+        omitted fields keep their current value. At least one field is required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDeviceRequest'
+            example:
+              state: IN_USE
+      responses:
+        '200':
+          description: The updated device.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              example:
+                id: 6f1c2a9e-3b4d-4e8f-9a1b-2c3d4e5f6a7b
+                name: iPhone 15
+                brand: Apple
+                state: IN_USE
+                created_at: '2026-11-17T09:30:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [Devices]
+      operationId: deleteDevice
+      summary: Delete device
+      responses:
+        '204':
+          description: Device deleted. No body.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  parameters:
+    DeviceID:
+      name: id
+      in: path
+      required: true
+      description: Device ID.
+      schema:
+        type: string
+        format: uuid
+        example: 6f1c2a9e-3b4d-4e8f-9a1b-2c3d4e5f6a7b
+
+  schemas:
+    DeviceState:
+      type: string
+      enum: [AVAILABLE, IN_USE, INACTIVE]
+      description: Current state of the device.
+      example: AVAILABLE
+
+    Device:
+      type: object
+      required: [id, name, brand, state, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+          example: 6f1c2a9e-3b4d-4e8f-9a1b-2c3d4e5f6a7b
+        name:
+          type: string
+          example: iPhone 15
+        brand:
+          type: string
+          example: Apple
+        state:
+          $ref: '#/components/schemas/DeviceState'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Set by the server on creation; never changes.
+          example: '2026-11-17T09:30:00Z'
+
+    CreateDeviceRequest:
+      type: object
+      required: [name, brand]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: iPhone 15
+        brand:
+          type: string
+          minLength: 1
+          example: Apple
+        state:
+          allOf:
+            - $ref: '#/components/schemas/DeviceState'
+          default: AVAILABLE
+          description: Defaults to `AVAILABLE` when omitted.
+
+    UpdateDeviceRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      description: Only the fields present are updated. `id` and `created_at` cannot be changed.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: iPhone 15 Pro
+        brand:
+          type: string
+          minLength: 1
+          example: Apple
+        state:
+          $ref: '#/components/schemas/DeviceState'
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code.
+          enum: [invalid_input, not_found, internal_error]
+          example: not_found
+        message:
+          type: string
+          description: Human-readable explanation.
+          example: device not found
+
+  responses:
+    BadRequest:
+      description: Invalid request (malformed JSON, unknown field, invalid state, missing required field, or bad query parameter).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: invalid_input
+            message: 'state must be one of: AVAILABLE, IN_USE, INACTIVE'
+    NotFound:
+      description: No device exists with the given ID.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: not_found
+            message: device not found
+    InternalError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: internal_error
+            message: internal server error
