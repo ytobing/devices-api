@@ -12,6 +12,8 @@ type deviceHandler struct {
 	logger *slog.Logger
 }
 
+var validStates = map[string]bool{"AVAILABLE": true, "IN_USE": true, "INACTIVE": true}
+
 type deviceResponse struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -21,7 +23,17 @@ type deviceResponse struct {
 }
 
 func (h *deviceHandler) getDevices(w http.ResponseWriter, r *http.Request) {
-	devices, err := h.svc.GetDevices()
+	brand := r.URL.Query().Get("brand")
+	state := r.URL.Query().Get("state")
+	if state != "" && !validStates[state] {
+		writeJSON(w, http.StatusBadRequest, errorResponse{
+			Code:    "invalid_input",
+			Message: "state must be one of: AVAILABLE, IN_USE, INACTIVE",
+		})
+		return
+	}
+
+	devices, err := h.svc.GetDevices(r.Context(), brand, state)
 	if err != nil {
 		h.logger.Error("get devices", "err", err)
 		writeJSON(w, http.StatusInternalServerError, errorResponse{

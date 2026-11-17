@@ -1,9 +1,13 @@
 package service
 
-import "github.com/ytobing/devices-api/internal/repository"
+import (
+	"context"
+
+	"github.com/ytobing/devices-api/internal/repository"
+)
 
 type DeviceService interface {
-	GetDevices() ([]Device, error)
+	GetDevices(ctx context.Context, brand, state string) ([]Device, error)
 }
 
 type deviceService struct {
@@ -24,8 +28,8 @@ type Device struct {
 	CreatedAt string
 }
 
-func (s *deviceService) GetDevices() ([]Device, error) {
-	rows, err := s.repo.GetDevices()
+func (s *deviceService) GetDevices(ctx context.Context, brand, state string) ([]Device, error) {
+	rows, err := s.repo.GetDevices(ctx, brand, state)
 	if err != nil {
 		return nil, err
 	}
