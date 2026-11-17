@@ -3,6 +3,8 @@ module github.com/ytobing/devices-api
 go 1.27.1
 
 require (
+	github.com/go-chi/chi/v5 v5.1.0
+	github.com/jmoiron/sqlx v1.4.0
 	github.com/pressly/goose/v3 v3.22.1
 	modernc.org/sqlite v1.34.1
 )

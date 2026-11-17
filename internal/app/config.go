@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 
@@ -13,29 +14,27 @@ import (
 
 var DBPath = "devices.db"
 
+var HTTPAddr = ":8080"
+
 type Config struct {
-	DBPath string
+	DBPath   string
+	HTTPAddr string
 }
 
 func Load() (Config, error) {
 	return Config{
-		DBPath: DBPath,
+		DBPath:   DBPath,
+		HTTPAddr: HTTPAddr,
 	}, nil
 }
 
-func InitSQLite(ctx context.Context, path string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", path)
+func InitSQLite(ctx context.Context, path string) (*sqlx.DB, error) {
+	db, err := sqlx.ConnectContext(ctx, "sqlite", path)
 	if err != nil {
-		return nil, fmt.Errorf("open sqlite: %w", err)
+		return nil, fmt.Errorf("connect sqlite: %w", err)
 	}
 
-	db.SetMaxOpenConns(1)
-
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("ping sqlite: %w", err)
-	}
-	if err := migrate(ctx, db); err != nil {
+	if err := migrate(ctx, db.DB); err != nil {
 		db.Close()
 		return nil, err
 	}
