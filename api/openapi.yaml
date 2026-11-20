@@ -1,9 +1,16 @@
 openapi: 3.0.3
 info:
   title: Devices API
-  version: 0.1.0
+  version: 1.0.0
   description: |
-    Manage devices: create, fetch, filter by brand or state, partially update, and delete.
+    Manage devices: create, fetch, filter by brand or state, fully or partially update, and delete.
+    Clients can subscribe to device state changes through a Server-Sent Events stream.
+
+    Domain rules:
+    - `id` and `created_at` are set by the server and can never be updated.
+    - `name` and `brand` cannot be changed while the device is `IN_USE` (409).
+    - Devices that are `IN_USE` cannot be deleted (409).
+    - State change notifications are sent only after the change is saved.
 
     Errors always use the `Error` schema with a machine-readable `code`
     and a human-readable `message`.
@@ -13,6 +20,7 @@ servers:
 
 tags:
   - name: Devices
+  - name: Events
 
 paths:
   /devices:
@@ -49,7 +57,7 @@ paths:
                   name: iPhone 15
                   brand: Apple
                   state: AVAILABLE
-                  created_at: '2026-11-17T09:30:00Z'
+                  created_at: '2026-11-20T09:30:00Z'
         '400':
           $ref: '#/components/responses/BadRequest'
         '500':
@@ -86,11 +94,38 @@ paths:
                 name: iPhone 15
                 brand: Apple
                 state: AVAILABLE
-                created_at: '2026-11-17T09:30:00Z'
+                created_at: '2026-11-20T09:30:00Z'
         '400':
           $ref: '#/components/responses/BadRequest'
         '500':
           $ref: '#/components/responses/InternalError'
+
+  /devices/events:
+    get:
+      tags: [Events]
+      operationId: streamDeviceEvents
+      summary: Subscribe to device state changes
+      description: |
+        Server-Sent Events stream. Every time a device's state changes and the change
+        has been saved, subscribers receive a `state_changed` event:
+
+        ```
+        event: state_changed
+        data: {"device_id":"6f1c...","previous_state":"AVAILABLE","new_state":"IN_USE"}
+        ```
+
+        Events are only delivered to currently connected clients; missed events are
+        not replayed after a disconnect or restart.
+      responses:
+        '200':
+          description: Event stream. The connection stays open.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/StateChangeEvent'
+              example: |
+                event: state_changed
+                data: {"device_id":"6f1c2a9e-3b4d-4e8f-9a1b-2c3d4e5f6a7b","previous_state":"AVAILABLE","new_state":"IN_USE"}
 
   /devices/{id}:
     parameters:
@@ -112,19 +147,50 @@ paths:
                 name: iPhone 15
                 brand: Apple
                 state: AVAILABLE
-                created_at: '2026-11-17T09:30:00Z'
+                created_at: '2026-11-20T09:30:00Z'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [Devices]
+      operationId: replaceDevice
+      summary: Fully update device
+      description: Replaces `name`, `brand` and `state`. All three fields are required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceDeviceRequest'
+            example:
+              name: iPhone 15 Pro
+              brand: Apple
+              state: INACTIVE
+      responses:
+        '200':
+          description: The updated device.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ConflictInUseUpdate'
         '500':
           $ref: '#/components/responses/InternalError'
 
     patch:
       tags: [Devices]
       operationId: updateDevice
-      summary: Update device data
+      summary: Partially update device
       description: |
-        Partial update. Only the fields present in the body are changed;
-        omitted fields keep their current value. At least one field is required.
+        Only the fields present in the body are changed; omitted fields keep their
+        current value. At least one field is required.
       requestBody:
         required: true
         content:
@@ -145,11 +211,13 @@ paths:
                 name: iPhone 15
                 brand: Apple
                 state: IN_USE
-                created_at: '2026-11-17T09:30:00Z'
+                created_at: '2026-11-20T09:30:00Z'
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ConflictInUseUpdate'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -162,6 +230,15 @@ paths:
           description: Device deleted. No body.
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: The device is in use and cannot be deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: conflict
+                message: 'device is in use: it cannot be deleted'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -206,7 +283,7 @@ components:
           format: date-time
           readOnly: true
           description: Set by the server on creation; never changes.
-          example: '2026-11-17T09:30:00Z'
+          example: '2026-11-20T09:30:00Z'
 
     CreateDeviceRequest:
       type: object
@@ -227,11 +304,11 @@ components:
           default: AVAILABLE
           description: Defaults to `AVAILABLE` when omitted.
 
-    UpdateDeviceRequest:
+    ReplaceDeviceRequest:
       type: object
-      minProperties: 1
+      required: [name, brand, state]
       additionalProperties: false
-      description: Only the fields present are updated. `id` and `created_at` cannot be changed.
+      description: '`id` and `created_at` cannot be changed; sending them returns 400.'
       properties:
         name:
           type: string
@@ -244,6 +321,36 @@ components:
         state:
           $ref: '#/components/schemas/DeviceState'
 
+    UpdateDeviceRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      description: Only the fields present are updated. `id` and `created_at` cannot be changed; sending them returns 400.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: iPhone 15 Pro
+        brand:
+          type: string
+          minLength: 1
+          example: Apple
+        state:
+          $ref: '#/components/schemas/DeviceState'
+
+    StateChangeEvent:
+      type: object
+      required: [device_id, previous_state, new_state]
+      properties:
+        device_id:
+          type: string
+          format: uuid
+          example: 6f1c2a9e-3b4d-4e8f-9a1b-2c3d4e5f6a7b
+        previous_state:
+          $ref: '#/components/schemas/DeviceState'
+        new_state:
+          $ref: '#/components/schemas/DeviceState'
+
     Error:
       type: object
       required: [code, message]
@@ -251,7 +358,7 @@ components:
         code:
           type: string
           description: Machine-readable error code.
-          enum: [invalid_input, not_found, internal_error]
+          enum: [invalid_input, not_found, conflict, internal_error]
           example: not_found
         message:
           type: string
@@ -260,14 +367,14 @@ components:
 
   responses:
     BadRequest:
-      description: Invalid request (malformed JSON, unknown field, invalid state, missing required field, or bad query parameter).
+      description: Invalid request (malformed JSON, unknown or read-only field, invalid state, missing required field, or bad query parameter).
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
           example:
             code: invalid_input
-            message: 'state must be one of: AVAILABLE, IN_USE, INACTIVE'
+            message: 'invalid input: state must be one of: AVAILABLE, IN_USE, INACTIVE'
     NotFound:
       description: No device exists with the given ID.
       content:
@@ -277,6 +384,15 @@ components:
           example:
             code: not_found
             message: device not found
+    ConflictInUseUpdate:
+      description: The device is in use, so its name and brand cannot be changed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: conflict
+            message: 'device is in use: name and brand cannot be updated'
     InternalError:
       description: Unexpected server error.
       content:

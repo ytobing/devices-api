@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/ytobing/devices-api/internal/handler/rest"
+	"github.com/ytobing/devices-api/internal/notifier"
 	"github.com/ytobing/devices-api/internal/repository"
 	"github.com/ytobing/devices-api/internal/service"
 )
@@ -20,14 +21,16 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger) error {
 	defer db.Close()
 	logger.Info("database ready", "path", cfg.DBPath)
 
+	broker := notifier.New()
 	repo := repository.NewRepository(db)
-	service := service.NewDeviceService(repo)
-	restHandler := rest.NewHandler(service, logger)
+	service := service.NewDeviceService(repo, broker)
+	restHandler := rest.NewHandler(service, broker, logger)
 
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: restHandler,
 	}
+	srv.RegisterOnShutdown(broker.Close)
 
 	context.AfterFunc(ctx, func() { srv.Shutdown(context.Background()) })
 
