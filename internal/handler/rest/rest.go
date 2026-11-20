@@ -17,6 +17,9 @@ func NewHandler(devices service.DeviceService, events http.Handler, logger *slog
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
 
+	r.Get("/docs", serveDocs)
+	r.Get("/docs/openapi.yaml", serveSpec)
+
 	r.Route("/devices", func(r chi.Router) {
 		r.Get("/", h.getDevices)
 		r.Post("/", h.createDevice)

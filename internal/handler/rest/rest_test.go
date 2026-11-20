@@ -199,3 +199,17 @@ func TestStateChangeEvents(t *testing.T) {
 	}
 	t.Fatalf("no event received: %v", scanner.Err())
 }
+
+func TestDocs(t *testing.T) {
+	srv := newServer(t)
+
+	resp, body := do(t, srv, http.MethodGet, "/docs", "")
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(body), "/docs/openapi.yaml") {
+		t.Fatalf("unexpected docs page: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+
+	resp, body = do(t, srv, http.MethodGet, "/docs/openapi.yaml", "")
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(string(body), "openapi: 3.0.3") {
+		t.Fatalf("unexpected spec: %d %.40s", resp.StatusCode, body)
+	}
+}
